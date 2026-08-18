@@ -32,21 +32,24 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
 
 /// Toggle the main window on a global Cmd/Ctrl+Shift+D press.
 fn register_global_shortcut(app: &AppHandle) -> tauri::Result<()> {
-    use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+    use tauri_plugin_global_shortcut::{
+        Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState,
+    };
 
     let shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyD);
-    app.global_shortcut().on_shortcut(shortcut, |app, _shortcut, event| {
-        if event.state() == ShortcutState::Pressed {
-            if let Some(window) = app.get_webview_window("main") {
-                if window.is_visible().unwrap_or(false) {
-                    let _ = window.hide();
-                } else {
-                    let _ = window.show();
-                    let _ = window.set_focus();
+    app.global_shortcut()
+        .on_shortcut(shortcut, |app, _shortcut, event| {
+            if event.state() == ShortcutState::Pressed {
+                if let Some(window) = app.get_webview_window("main") {
+                    if window.is_visible().unwrap_or(false) {
+                        let _ = window.hide();
+                    } else {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
                 }
             }
-        }
-    })?;
+        })?;
 
     Ok(())
 }

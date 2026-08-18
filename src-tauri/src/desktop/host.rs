@@ -25,7 +25,9 @@ pub fn start_and_wait() -> Result<String, String> {
 /// Spawn the host process, detached from this shell's lifetime expectations.
 fn spawn_host(command: &str) -> Result<(), String> {
     let mut parts = command.split_whitespace();
-    let program = parts.next().ok_or_else(|| "DSH_DESKTOP_HOST_CMD is empty".to_string())?;
+    let program = parts
+        .next()
+        .ok_or_else(|| "DSH_DESKTOP_HOST_CMD is empty".to_string())?;
 
     std::process::Command::new(program)
         .args(parts)
@@ -44,5 +46,7 @@ fn wait_until_ready(addr: &str, timeout: Duration) -> Result<(), String> {
         }
         std::thread::sleep(Duration::from_millis(500));
     }
-    Err(format!("host at {addr} did not become ready within {timeout:?}"))
+    Err(format!(
+        "host at {addr} did not become ready within {timeout:?}"
+    ))
 }
