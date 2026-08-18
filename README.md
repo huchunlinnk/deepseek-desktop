@@ -28,24 +28,19 @@ A thin native desktop shell for [DeepSeek Harness](https://github.com/deepseek-a
 ## Build
 
 ```sh
-# one-time: install deps and generate icons
+# one-time: install deps, generate icons, and vendor the harness host
 npm install
 npm run tauri icon ./icon.png   # supply a 1024x1024 PNG
+bash scripts/bundle-host.sh      # vendors @deepseek-ai/dsh into vendor/host/
 
 # dev (run `dsh web` yourself, window shows the live UI)
 npm run tauri dev
 
-# production binary
+# production binary (bundles the vendored host, so no global `dsh` is needed)
 npm run tauri build
 ```
 
-The host command is overridable with `DSH_DESKTOP_HOST_CMD` (default `dsh web`). For a zero-environment install, vendor the host first and the shell will prefer it automatically:
-
-```sh
-bash scripts/bundle-host.sh   # vendors @deepseek-ai/dsh into vendor/host/
-```
-
-Resolution order: `DSH_DESKTOP_HOST_CMD` → bundled `vendor/host/dsh-launcher` → system `dsh`. Bundling the Node runtime itself (one per arch) is the remaining step for a fully self-contained binary; the launcher currently relies on a system `node`.
+The host command is overridable with `DSH_DESKTOP_HOST_CMD` (default `dsh web`). Resolution order: `DSH_DESKTOP_HOST_CMD` → bundled `vendor/host/dsh-launcher` → system `dsh`. The vendored launcher resolves the dsh bin relative to itself and bakes an absolute node path, so it works even from a Finder launch (whose PATH is minimal). Bundling the Node runtime itself (one per arch) is the remaining step for a fully self-contained binary; the launcher currently relies on a system `node`.
 
 ## How it stays current
 

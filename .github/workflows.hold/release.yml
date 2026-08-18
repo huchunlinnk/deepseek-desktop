@@ -45,6 +45,9 @@ jobs:
       - name: Install frontend tooling
         run: npm install
 
+      - name: Vendor the harness host
+        run: bash scripts/bundle-host.sh
+
       - name: Build and bundle
         uses: tauri-apps/tauri-action@v0
         env:
