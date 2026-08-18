@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
-A thin native desktop shell for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — and the living target of the [`deepseek-desk-rsi`](https://github.com/YOUR_ORG/deepseek-desk-rsi) engine. **AI for AI**: this app is *maintained* by a DeepSeek Harness agent that tracks upstream and opens a pull request every day.
+A thin native desktop shell for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — and the living target of the [`deepseek-desk-rsi`](https://github.com/huchunlinnk/deepseek-desk-rsi) engine. **AI for AI**: this app is *maintained* by a DeepSeek Harness agent that tracks upstream and opens a pull request every day.
 
 ## What it is
 

@@ -2,12 +2,12 @@
 
 Do these once before the first public release.
 
-## 1. Set the org
+## 1. Org
 
-Replace `YOUR_ORG` with your GitHub user or org in:
+This repo lives under `huchunlinnk`. If you fork it, replace `huchunlinnk` with your own user/org in:
 
 - `README.md` (the `deepseek-desk-rsi` link)
-- `.github/workflows/daily-sync.yml` (the `dsh plugin add github:YOUR_ORG/...` line)
+- `.github/workflows/daily-sync.yml` (the `dsh plugin add` line)
 
 ## 2. Publish the repo
 
@@ -22,7 +22,8 @@ GitHub → Settings → Secrets and variables → Actions, add:
 | Name | Purpose |
 |---|---|
 | `DEEPSEEK_API_KEY` | runs the harness (chat + web search) |
-| `GH_TOKEN` | lets `daily-sync.yml` open pull requests (fine-grained PAT: `contents: write`, `pull-requests: write`) |
+
+`daily-sync.yml` uses the automatic `secrets.GITHUB_TOKEN` for pull requests — no manual token is needed.
 
 ## 4. Build and verify
 

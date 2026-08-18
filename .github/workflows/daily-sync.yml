@@ -43,7 +43,7 @@ jobs:
       - uses: pnpm/action-setup@v4
 
       - name: Install the RSI engine into a headless profile
-        run: npx @deepseek-ai/dsh plugin --profile rsi add github:YOUR_ORG/deepseek-desk-rsi#main
+        run: npx @deepseek-ai/dsh plugin --profile rsi add github:huchunlinnk/deepseek-desk-rsi#main
 
       - name: Run the daily RSI sync
         run: |
