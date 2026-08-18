@@ -1,0 +1,26 @@
+name: Bug report
+description: Something is broken
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What did you run, what did you expect, what happened instead?
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: OS and architecture (e.g. macOS arm64, Windows x64).
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The app version and the dsh host version it pinned.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant output, redacting any secrets or keys.
