@@ -7,6 +7,10 @@
 //! - `AutoBump`: trust the latest version and update in place.
 //! - `AutoBumpWithGate`: update only after the RSI engine's verify pass reports ok.
 
+// The Strategy types are the public surface the (not-yet-wired) updater and the
+// RSI engine consume; they are exported intentionally and unused until then.
+#![allow(dead_code)]
+
 /// The three selectable update strategies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UpdateStrategy {

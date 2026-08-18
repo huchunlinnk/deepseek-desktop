@@ -13,7 +13,12 @@ use tauri::{AppHandle, Manager};
 /// Wire up the tray, the global toggle shortcut, and the harness host.
 pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     tray::build(app)?;
-    register_global_shortcut(app)?;
+
+    // The global shortcut is a convenience, not a hard requirement: log and
+    // continue if its registration fails (e.g. the hotkey is already taken).
+    if let Err(err) = register_global_shortcut(app) {
+        eprintln!("[deepseek-desktop] global shortcut unavailable: {err}");
+    }
 
     // Boot the host on a dedicated thread (it blocks on a TCP readiness poll),
     // then navigate the webview to the harness UI once it answers.
@@ -31,7 +36,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
 }
 
 /// Toggle the main window on a global Cmd/Ctrl+Shift+D press.
-fn register_global_shortcut(app: &AppHandle) -> tauri::Result<()> {
+fn register_global_shortcut(app: &AppHandle) -> Result<(), tauri_plugin_global_shortcut::Error> {
     use tauri_plugin_global_shortcut::{
         Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState,
     };
