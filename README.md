@@ -1,98 +1,100 @@
 # deepseek-desktop
 
+[English](./README.en.md) | 中文
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
-A native desktop shell for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — thin, light (~9 MB), and **self-maintaining**. A DeepSeek Harness agent ([`deepseek-desk-rsi`](https://github.com/huchunlinnk/deepseek-desk-rsi)) tracks upstream every day, enforces 1:1 feature parity, and opens a pull request.
+[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的原生桌面壳 —— 轻（约 9 MB）、薄，而且**能自我维护**。一个 DeepSeek Harness 智能体（[`deepseek-desk-rsi`](https://github.com/huchunlinnk/deepseek-desk-rsi)）每天追踪上游、强制 1:1 特性对等、并自动开 pull request。
 
-**AI for AI: DSH maintains DSH.**
+**AI for AI：DSH 维护 DSH。**
 
-## Why this exists
+## 为什么做这个
 
-DeepSeek Harness is in `0.1.x-rc` and ships breaking changes often. A desktop shell that pins one version rots within days. The only sustainable answer is to make the app *maintain itself* — and since DSH's whole thesis is "everything is a plugin, the agent can evolve itself", the maintainer is a DSH agent.
+DeepSeek Harness 目前是 `0.1.x-rc`，频繁出破坏性变更。一个锁死某个版本的桌面壳几天就会腐坏。唯一可持续的答案是让应用**自己维护自己**——而 DSH 的核心主张就是"一切皆插件、agent 能自我进化"，所以维护者就是一个 DSH agent。
 
-1. **Native and light.** A ~9 MB Tauri shell that reuses the official host instead of reimplementing it — every harness capability (bash, filesystem, subagents, workflows, MCP, skills, plan mode, …) is inherited for free.
-2. **Self-maintained.** Every day the `daily-sync.yml` workflow runs a headless DSH agent that perceives upstream changes, integrates them, verifies (build + test + serve), checks 1:1 parity, repairs on failure, and opens a PR. You review and merge.
-3. **Just works from Finder.** The host is vendored self-contained — a relocatable launcher with an absolute node path — so even a GUI launch with a minimal `PATH` boots it.
-4. **Per-chip coverage.** macOS arm64/x64 and Windows x64/arm64, built by CI.
+1. **原生、轻量。** 一个约 9 MB 的 Tauri 壳，复用官方宿主而不是重写它——宿主的一切能力（bash、文件系统、子代理、工作流、MCP、技能、计划模式……）全部免费继承。
+2. **自我维护。** 每天 `daily-sync.yml` 会跑一个无头 DSH agent：感知上游变化 → 集成 → 验证（构建+测试+服务冒烟）→ 1:1 对等检查 → 失败修复 → 开 PR。你只负责 review 和 merge。
+3. **从 Finder 双击就能跑。** 宿主被打成自包含（可重定位 launcher + 绝对 node 路径），即使 GUI 启动时的极简 `PATH` 也能拉起。
+4. **分芯片全覆盖。** macOS arm64/x64 + Windows x64/arm64，由 CI 构建。
 
-## What it is
+## 它是什么
 
-- Boots the official `dsh web` host (never reimplements the harness or the web UI).
-- Shows it in a native window with a system tray, native notifications, a global toggle shortcut (`Cmd/Ctrl+Shift+D`), single-instance focus, and autostart.
-- Pluggable update policy (`Pin` / `AutoBump` / `AutoBumpWithGate`) so the RSI engine can gate updates on its own verify pass.
+- 启动官方 `dsh web` 宿主（绝不重写 harness 或 Web UI）。
+- 用原生窗口展示它，带系统托盘、原生通知、全局切换快捷键（`Cmd/Ctrl+Shift+D`）、单实例聚焦、开机自启。
+- 可插拔更新策略（`Pin` / `AutoBump` / `AutoBumpWithGate`），让 RSI 引擎能用自己的 verify 结果来把关更新。
 
-## Architecture
+## 架构
 
-The shell is deliberately thin: it only boots the host and views it.
+这个壳刻意做得很薄：只负责拉宿主 + 展示。
 
 ```
-Tauri shell (Rust)
- ├─ host.rs      spawn `dsh web`, poll :3080 until ready
- ├─ tray.rs      system tray (Show / Quit)
- ├─ updater.rs   update policy — Strategy pattern
- └─ mod.rs       wiring (global shortcut, single-instance, autostart)
-        │  spawns
+Tauri 壳（Rust）
+ ├─ host.rs      拉 `dsh web`，轮询 :3080 直到就绪
+ ├─ tray.rs      系统托盘（显示 / 退出）
+ ├─ updater.rs   更新策略 —— Strategy 模式
+ └─ mod.rs       装配（全局快捷键、单实例、自启）
+        │  拉起
         ▼
- vendor/host/dsh-launcher   (vendored @deepseek-ai/dsh, self-contained)
+ vendor/host/dsh-launcher   （vendor 的 @deepseek-ai/dsh，自包含）
         │
- webview ──► http://127.0.0.1:3080   (the official DSH web UI)
+ webview ──► http://127.0.0.1:3080   （官方 DSH Web UI）
 ```
 
-Host resolution order: `DSH_DESKTOP_HOST_CMD` (explicit) → bundled `vendor/host/dsh-launcher` → system `dsh`.
+宿主解析顺序：`DSH_DESKTOP_HOST_CMD`（显式）→ 内置 `vendor/host/dsh-launcher` → 系统 `dsh`。
 
-## Platform matrix
+## 平台矩阵
 
-| OS | Arch | Status |
+| OS | 架构 | 状态 |
 |---|---|---|
-| macOS | arm64 (Apple Silicon) | native |
-| macOS | x64 (Intel) | native (macos-13 runner) |
-| Windows | x64 | native |
-| Windows | arm64 | experimental cross-compile — no native smoke |
+| macOS | arm64（Apple Silicon） | 原生 |
+| macOS | x64（Intel） | 原生（macos-13 runner） |
+| Windows | x64 | 原生 |
+| Windows | arm64 | 实验性交叉编译 —— 无原生冒烟 |
 
-## Quick start
+## 快速开始
 
 ```sh
 git clone https://github.com/huchunlinnk/deepseek-desktop.git
 cd deepseek-desktop
 
 npm install                      # Tauri CLI
-npm run tauri icon ./icon.png    # one-time; icons are already committed
-bash scripts/bundle-host.sh      # vendor @deepseek-ai/dsh into vendor/host/
-npm run tauri build              # produce the .app (and .dmg in CI)
+npm run tauri icon ./icon.png    # 一次性；图标已提交
+bash scripts/bundle-host.sh      # 把 @deepseek-ai/dsh vendor 进 vendor/host/
+npm run tauri build              # 产出 .app（.dmg 在 CI 里产出）
 ```
 
-The built app lands at `src-tauri/target/release/bundle/macos/DeepSeek Harness Desktop.app`.
+构建产物在 `src-tauri/target/release/bundle/macos/DeepSeek Harness Desktop.app`。
 
-## How it stays current (AI-for-AI)
+## 它如何保持最新（AI-for-AI）
 
-[`daily-sync.yml`](.github/workflows/daily-sync.yml) runs a headless DSH agent every day:
-
-```
-perceive → integrate → verify → parity → repair (bounded) → propose
-```
-
-The agent diffs upstream, edits the integration glue, builds + tests + smokes the serve path, checks the 128-plugin parity contract, rolls back and retries on failure (max 3 rounds), and opens a PR with the evidence. A human merges — the loop never lands code on its own.
-
-## Feature parity
-
-`parity.json` lists every plugin in the official `dsh-base` + `dsh-web-app` bundles (128 plugins). `rsi_parity` fails if any name goes missing after a sync. See [`PARITY.md`](./PARITY.md) for the original-vs-desktop comparison.
-
-## Repository layout
+[`daily-sync.yml`](.github/workflows/daily-sync.yml) 每天跑一个无头 DSH agent：
 
 ```
-frontend/          static splash (index.html)
-scripts/           bundle-host.sh, smoke-web.sh
+perceive → integrate → verify → parity → repair（有界）→ propose
+```
+
+agent 对比上游 diff、改集成胶水、构建+测试+服务冒烟、校验 128 插件对等契约、失败则回滚重试（最多 3 轮）、最后带证据开 PR。由人 merge——这个环自己不会合代码。
+
+## 特性对等
+
+`parity.json` 列出了官方 `dsh-base` + `dsh-web-app` 两个 bundle 里的全部插件（128 个）。同步后只要少了任何一个名字，`rsi_parity` 就会失败。原版 vs 桌面版的对比见 [`PARITY.md`](./PARITY.md)。
+
+## 仓库结构
+
+```
+frontend/         静态 splash（index.html）
+scripts/          bundle-host.sh、smoke-web.sh
 src-tauri/
-  src/desktop/     host.rs, tray.rs, updater.rs, mod.rs
-  icons/           generated platform icons
-.github/workflows/ ci.yml, daily-sync.yml, release.yml
-parity.json        the 128-plugin parity contract
+  src/desktop/    host.rs、tray.rs、updater.rs、mod.rs
+  icons/          生成的平台图标
+.github/workflows/ ci.yml、daily-sync.yml、release.yml
+parity.json       128 插件对等契约
 ```
 
-## Security
+## 安全
 
-This app runs a local agent with shell access; the shell adds no isolation on top of the harness's own sandbox and approval layers. Secrets never live in the repo. See [`SECURITY.md`](./SECURITY.md).
+这个应用运行一个拥有 shell 权限的本地 agent；壳不会在 harness 自身的沙箱和审批层之上再加隔离。密钥绝不进仓库。见 [`SECURITY.md`](./SECURITY.md)。
 
-## License
+## 许可证
 
 [MIT](./LICENSE)
