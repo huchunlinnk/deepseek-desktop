@@ -37,7 +37,13 @@ npm run tauri dev
 npm run tauri build
 ```
 
-The host command is overridable with `DSH_DESKTOP_HOST_CMD` (default `dsh web`); set it to a pinned `npx @deepseek-ai/dsh web` for reproducible builds.
+The host command is overridable with `DSH_DESKTOP_HOST_CMD` (default `dsh web`). For a zero-environment install, vendor the host first and the shell will prefer it automatically:
+
+```sh
+bash scripts/bundle-host.sh   # vendors @deepseek-ai/dsh into vendor/host/
+```
+
+Resolution order: `DSH_DESKTOP_HOST_CMD` → bundled `vendor/host/dsh-launcher` → system `dsh`. Bundling the Node runtime itself (one per arch) is the remaining step for a fully self-contained binary; the launcher currently relies on a system `node`.
 
 ## How it stays current
 

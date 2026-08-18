@@ -14,12 +14,40 @@ pub const HOST_URL: &str = "http://127.0.0.1:3080";
 
 /// Spawn the host and block until its HTTP endpoint accepts connections.
 pub fn start_and_wait() -> Result<String, String> {
-    let command = std::env::var("DSH_DESKTOP_HOST_CMD").unwrap_or_else(|_| "dsh web".to_string());
+    let command = resolve_host_command();
 
     spawn_host(&command)?;
     wait_until_ready(HOST_ADDR, Duration::from_secs(120))?;
 
     Ok(HOST_URL.to_string())
+}
+
+/// Resolve the host boot command: explicit env override → bundled launcher → system `dsh`.
+fn resolve_host_command() -> String {
+    if let Ok(command) = std::env::var("DSH_DESKTOP_HOST_CMD") {
+        if !command.trim().is_empty() {
+            return command;
+        }
+    }
+    if let Some(launcher) = bundled_launcher() {
+        return format!("{launcher} web");
+    }
+    "dsh web".to_string()
+}
+
+/// Best-effort locate the vendored launcher (written by `scripts/bundle-host.sh`)
+/// beside the executable, covering the macOS `Resources/` and Windows layouts.
+fn bundled_launcher() -> Option<String> {
+    let dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
+    for candidate in [
+        dir.join("host/dsh-launcher"),
+        dir.join("../Resources/host/dsh-launcher"),
+    ] {
+        if candidate.is_file() {
+            return Some(candidate.to_string_lossy().into_owned());
+        }
+    }
+    None
 }
 
 /// Spawn the host process, detached from this shell's lifetime expectations.
