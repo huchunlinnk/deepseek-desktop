@@ -41,7 +41,7 @@ The host command is overridable with `DSH_DESKTOP_HOST_CMD` (default `dsh web`);
 
 ## How it stays current
 
-`daily-upstream-sync.yml` runs a headless DSH agent every day that perceives upstream changes, integrates them, verifies (build + test), repairs on failure, and opens a PR via `rsi_propose`. A human merges. See the RSI engine repo for the loop semantics.
+`daily-upstream-sync.yml` runs a headless DSH agent every day that perceives upstream changes, integrates them, verifies (build + test), checks **1:1 feature parity** via `rsi_parity` against `parity.json`, repairs on failure, and opens a PR via `rsi_propose`. A human merges. See [PARITY.md](./PARITY.md) for the original-vs-desktop comparison, and the RSI engine repo for the loop semantics.
 
 ## License
 
