@@ -30,6 +30,7 @@ GitHub → Settings → Secrets and variables → Actions, add:
 ```sh
 npm install
 npm run tauri icon ./icon.png   # regenerate icons if you change the source
+bash scripts/bundle-host.sh     # vendor @deepseek-ai/dsh (required before bundling)
 npm run tauri build
 ```
 

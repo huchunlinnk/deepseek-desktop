@@ -7,8 +7,9 @@ Thanks for helping build the desktop shell. This is the target of the `deepseek-
 ```sh
 npm install                          # Tauri CLI + tooling
 npm run tauri icon ./icon.png        # regenerate platform icons (one-time)
+bash scripts/bundle-host.sh          # vendor @deepseek-ai/dsh (one-time)
 npm run tauri dev                    # dev (run `dsh web` yourself; window shows the live UI)
-npm run tauri build                  # production binary
+npm run tauri build                  # production binary (bundles the vendored host)
 ```
 
 ## Conventions
