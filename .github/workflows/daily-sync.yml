@@ -29,6 +29,13 @@ jobs:
       - name: Fetch upstream
         run: git fetch upstream --tags
 
+      - name: Install Tauri Linux build dependencies (for rsi_verify's cargo build)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
