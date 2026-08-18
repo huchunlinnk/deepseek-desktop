@@ -1,0 +1,46 @@
+# The "AI for AI" loop: DeepSeek Harness maintains this desktop app.
+#
+# Every day a headless DSH agent (the deepseek-desk-rsi profile) perceives what
+# changed upstream in deepseek-harness, integrates the relevant changes into this
+# shell's glue, verifies (build + test), repairs on failure, and opens a PR.
+# A human still merges — the loop never lands code on its own.
+name: daily-upstream-sync
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Add the upstream harness remote
+        run: git remote add upstream https://github.com/deepseek-ai/deepseek-harness.git || true
+
+      - name: Fetch upstream
+        run: git fetch upstream --tags
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: pnpm/action-setup@v4
+
+      - name: Install the RSI engine into a headless profile
+        run: npx @deepseek-ai/dsh plugin --profile rsi add github:YOUR_ORG/deepseek-desk-rsi#main
+
+      - name: Run the daily RSI sync
+        run: |
+          npx @deepseek-ai/dsh --profile rsi "Run the daily upstream sync against the 'upstream' remote: call rsi_perceive, integrate the relevant harness changes into the desktop glue, call rsi_checkpoint before editing, call rsi_verify, and if it fails roll back with rsi_rollback and retry a bounded number of times; when it passes, call rsi_propose with the rsi_verify output pasted into the body."
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,55 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS — Apple Silicon, native
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+          # macOS — Intel. macos-13 is the last x64-native public runner.
+          - platform: macos-13
+            target: x86_64-apple-darwin
+          # Windows — x64, native
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+          # Windows — arm64. EXPERIMENTAL: cross-compiled on an x64 runner, so no
+          # native smoke test runs. Do not ship this artifact as production until
+          # a real arm64 Windows runner exists.
+          - platform: windows-latest
+            target: aarch64-pc-windows-msvc
+            experimental: true
+    runs-on: ${{ matrix.platform }}
+    continue-on-error: ${{ matrix.experimental == true }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install frontend tooling
+        run: npm install
+
+      - name: Build and bundle
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__
+          releaseName: 'DeepSeek Harness Desktop v__VERSION__'
+          args: --target ${{ matrix.target }}

@@ -1,0 +1,14 @@
+{
+  "name": "deepseek-desktop",
+  "version": "0.1.0",
+  "description": "A thin native desktop shell for DeepSeek Harness — boots the official host, wraps it in a tray/notification/hotkey window, and is self-maintained by the deepseek-desk-rsi engine.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  },
+  "license": "MIT"
+}
