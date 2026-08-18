@@ -4,6 +4,13 @@
 
 A thin native desktop shell for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — and the living target of the [`deepseek-desk-rsi`](https://github.com/huchunlinnk/deepseek-desk-rsi) engine. **AI for AI**: this app is *maintained* by a DeepSeek Harness agent that tracks upstream and opens a pull request every day.
 
+## Why — the biggest advantages
+
+1. **Native and light.** A ~9 MB Tauri shell that reuses the official host instead of reimplementing it — every harness capability is inherited for free.
+2. **Self-maintained.** Every day a DeepSeek Harness agent (`deepseek-desk-rsi`) syncs it with upstream, enforces 1:1 feature parity, and opens a PR. You review and merge.
+3. **Just works from Finder.** The host is vendored self-contained (absolute node path + relocatable launcher), so even a GUI launch with a minimal PATH boots it.
+4. **Per-chip coverage.** macOS arm64/x64 and Windows x64/arm64 via CI.
+
 ## What it is
 
 - Boots the official `dsh web` host (never reimplements the harness or the UI).
