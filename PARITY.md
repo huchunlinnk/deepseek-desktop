@@ -48,7 +48,7 @@ Each is a `dsh-tool-*` plugin; parity checks their plugin names, so the tool sur
 
 | Capability | Original | Desktop | RSI verifies via |
 |---|---|---|---|
-| HTTP server + API gateway | `dsh-host-webserver`, `dsh-host-apiproxy`, `dsh-api-gateway` | identical | HTTP 200 on `:3080` + plugin name |
+| HTTP server + API gateway | `dsh-host-webserver`, `dsh-host-apiproxy`, `dsh-api-gateway` | identical | `scripts/smoke-web.sh` (HTTP 200) + plugin name |
 | Client runtime + cordis | `dsh-client-runtime`, `dsh-cordis-client-runner`, `dsh-client-modules` | identical | plugin name |
 | UI nodes (sidebar, settings, conversation, tool, plan, goal, workspace, jobs, presets, …) | `dsh-client-ui-*` (≈ 28 nodes) | identical | plugin name |
 | Agent presets | `dsh-agent-presets` | identical | plugin name |
