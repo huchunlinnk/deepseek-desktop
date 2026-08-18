@@ -7,7 +7,7 @@
     "beforeDevCommand": "",
     "devUrl": "http://127.0.0.1:3080",
     "beforeBuildCommand": "",
-    "frontendDist": ".."
+    "frontendDist": "../frontend"
   },
   "app": {
     "windows": [
