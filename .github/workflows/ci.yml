@@ -26,6 +26,11 @@ jobs:
           bash -n scripts/bundle-host.sh
           bash -n scripts/smoke-web.sh
 
+      # tauri-build validates bundle.resources paths at compile time; cargo check
+      # only needs the directory to exist, not its (heavy) vendored contents.
+      - name: Ensure vendored-host dir exists
+        run: mkdir -p vendor/host
+
       - name: cargo check
         working-directory: src-tauri
         run: cargo check --locked
