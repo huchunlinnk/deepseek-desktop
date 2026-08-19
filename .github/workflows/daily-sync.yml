@@ -8,7 +8,8 @@ name: daily-upstream-sync
 
 on:
   schedule:
-    - cron: '0 3 * * *'
+    # 每天 13:00（北京时间 UTC+8）= 05:00 UTC。改时区就改这里。
+    - cron: '0 5 * * *'
   workflow_dispatch: {}
 
 permissions:
