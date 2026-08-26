@@ -4,9 +4,10 @@
 //! published host and views it. The host command is overridable so the RSI
 //! engine can pin a verified version.
 
+use std::io::Read;
 use std::net::TcpStream;
-use std::process::Child;
-use std::sync::{Mutex, OnceLock};
+use std::process::{Child, Command, Stdio};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 /// Address the `dsh web` host binds by default.
@@ -29,13 +30,36 @@ pub fn kill_host() {
 }
 
 /// Spawn the host and block until its HTTP endpoint accepts connections.
+/// If the preferred command fails at boot, fall back to the system `dsh`
+/// before giving up — a stale vendored host (version skew against
+/// `~/.dsh/.credentials.yaml` or the profile dir) must not brick the app.
 pub fn start_and_wait() -> Result<String, String> {
     let (program, args) = resolve_host_command();
 
-    spawn_host(&program, &args)?;
-    wait_until_ready(HOST_ADDR, Duration::from_secs(120))?;
+    match spawn_and_wait(&program, &args) {
+        Ok(()) => return Ok(HOST_URL.to_string()),
+        Err(primary_err) => {
+            // Self-repair fallback: the system dsh tracks the newest state
+            // (it is what upgraded the credentials file in the first place),
+            // so it is the best candidate for reviving a broken boot.
+            let fallback = "dsh";
+            eprintln!(
+                "[deepseek-desktop] host `{program}` failed, falling back to `{fallback}`: {primary_err}"
+            );
+            if program != fallback {
+                if let Ok(()) = spawn_and_wait(fallback, &["web".to_string()]) {
+                    return Ok(HOST_URL.to_string());
+                }
+            }
+            Err(primary_err)
+        }
+    }
+}
 
-    Ok(HOST_URL.to_string())
+/// Spawn one command and wait for readiness, as `start_and_wait` does per try.
+fn spawn_and_wait(program: &str, args: &[String]) -> Result<(), String> {
+    spawn_host(program, args)?;
+    wait_until_ready(HOST_ADDR, Duration::from_secs(120))
 }
 
 /// Resolve the host boot command as `(program, args)`: explicit env override →
@@ -74,11 +98,39 @@ fn bundled_launcher() -> Option<String> {
 }
 
 /// Spawn the host process and record its handle so `kill_host` can reap it.
+/// Stderr is piped and drained on a reader thread: a host that dies at boot
+/// (bad credentials, corrupted profile, version skew) must surface its error
+/// instead of being muted while the readiness poll runs out its two minutes.
 fn spawn_host(program: &str, args: &[String]) -> Result<(), String> {
-    let child = std::process::Command::new(program)
+    let mut child = Command::new(program)
         .args(args)
+        .stderr(Stdio::piped())
+        .stdout(Stdio::null())
         .spawn()
         .map_err(|err| format!("failed to spawn host `{program}`: {err}"))?;
+
+    if let Some(stderr) = child.stderr.take() {
+        // Shared ring of the last stderr bytes, read until the child exits.
+        let tail: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
+        ERR_TAIL.get_or_init(|| tail.clone());
+        std::thread::spawn(move || {
+            let mut reader = stderr;
+            let mut buf = [0u8; 4096];
+            loop {
+                match reader.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        let mut tail = tail.lock().unwrap();
+                        tail.extend_from_slice(&buf[..n]);
+                        let len = tail.len();
+                        if len > 8192 {
+                            tail.drain(..len - 8192);
+                        }
+                    }
+                }
+            }
+        });
+    }
 
     if let Ok(mut guard) = HOST_CHILD.get_or_init(|| Mutex::new(None)).lock() {
         *guard = Some(child);
@@ -87,16 +139,55 @@ fn spawn_host(program: &str, args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// Poll a TCP connect until it succeeds or the deadline passes.
+/// Tail of the host's stderr, kept so `wait_until_ready` can quote the reason
+/// the host died instead of reporting only "did not become ready".
+static ERR_TAIL: OnceLock<Arc<Mutex<Vec<u8>>>> = OnceLock::new();
+
+/// Last ~8 KB of host stderr, lossily decoded for display.
+fn host_error_tail() -> String {
+    ERR_TAIL
+        .get()
+        .and_then(|tail| tail.lock().ok())
+        .map(|tail| String::from_utf8_lossy(&tail).into_owned())
+        .unwrap_or_default()
+}
+
+/// Poll a TCP connect until it succeeds, the child exits, or the deadline
+/// passes. A child that has already exited means the host crashed at boot —
+/// return its stderr immediately rather than spinning for the full timeout,
+/// which is what left the splash stuck on a "loading" spinner before.
 fn wait_until_ready(addr: &str, timeout: Duration) -> Result<(), String> {
     let deadline = Instant::now() + timeout;
-    while Instant::now() < deadline {
+    loop {
         if TcpStream::connect(addr).is_ok() {
             return Ok(());
         }
+        // The host dying is the common failure (bad credentials, profile
+        // corruption); detect it so the error is immediate and quotable.
+        if let Ok(mut guard) = HOST_CHILD.get_or_init(|| Mutex::new(None)).lock() {
+            if let Some(child) = guard.as_mut() {
+                match child.try_wait() {
+                    Ok(Some(status)) => {
+                        let tail = host_error_tail();
+                        let reason = if tail.trim().is_empty() {
+                            String::new()
+                        } else {
+                            format!("\n--- host stderr (tail) ---\n{tail}")
+                        };
+                        return Err(format!(
+                            "host at {addr} exited during startup with {status}{reason}"
+                        ));
+                    }
+                    Ok(None) => {}
+                    Err(err) => eprintln!("[deepseek-desktop] failed to poll host: {err}"),
+                }
+            }
+        }
+        if Instant::now() >= deadline {
+            return Err(format!(
+                "host at {addr} did not become ready within {timeout:?}"
+            ));
+        }
         std::thread::sleep(Duration::from_millis(500));
     }
-    Err(format!(
-        "host at {addr} did not become ready within {timeout:?}"
-    ))
 }

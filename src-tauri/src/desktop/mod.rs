@@ -25,7 +25,9 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     create_main_window(app)?;
 
     // Boot the host on a dedicated thread (it blocks on a TCP readiness poll),
-    // then navigate the webview to the harness UI once it answers.
+    // then navigate the webview to the harness UI once it answers. A boot
+    // failure replaces the splash's spinner with the reason, so a dead host is
+    // a readable error rather than an eternal "Starting the harness…".
     let handle = app.clone();
     std::thread::spawn(move || match host::start_and_wait() {
         Ok(url) => {
@@ -33,7 +35,16 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
                 let _ = window.eval(&format!("window.location.replace('{url}')"));
             }
         }
-        Err(err) => eprintln!("[deepseek-desktop] {err}"),
+        Err(err) => {
+            eprintln!("[deepseek-desktop] {err}");
+            // Surface the failure out-of-band: a notification survives the
+            // window being minimized or offscreen, so a dead host finds the
+            // user instead of the user discovering an eternal spinner.
+            notify_boot_failure(&handle, &err);
+            if let Some(window) = handle.get_webview_window("main") {
+                let _ = window.eval(&render_boot_error(&err));
+            }
+        }
     });
 
     Ok(())
@@ -67,6 +78,49 @@ fn create_main_window(app: &AppHandle) -> tauri::Result<()> {
     .build()?;
 
     Ok(())
+}
+
+/// Fire an OS notification for a host-boot failure. The title states what
+/// broke and the body carries the first line of the reason, so the user is
+/// summoned with the diagnostic already in hand. Failures to notify are
+/// logged only — the in-window error is the primary channel.
+fn notify_boot_failure(app: &AppHandle, err: &str) {
+    use tauri_plugin_notification::NotificationExt;
+
+    let first_line = err.lines().find(|l| !l.trim().is_empty()).unwrap_or(err);
+    let body = if first_line.len() > 200 {
+        format!("{}…", &first_line[..200])
+    } else {
+        first_line.to_string()
+    };
+    let result = app
+        .notification()
+        .builder()
+        .title("DeepSeek Harness failed to start")
+        .body(body)
+        .show();
+    if let Err(err) = result {
+        eprintln!("[deepseek-desktop] notification failed: {err}");
+    }
+}
+
+/// JavaScript that swaps the splash's spinner for the boot error, so the
+/// failure is visible in the window itself. The message is JSON-encoded to
+/// survive quotes, backslashes, and newlines in the host's stderr tail.
+fn render_boot_error(err: &str) -> String {
+    format!(
+        concat!(
+            "(function(){{var c=document.querySelector('.card');",
+            "if(!c)return;",
+            "var s=c.querySelector('.pulse');if(s)s.remove();",
+            "var h=c.querySelector('h1');if(h)h.textContent='Harness failed to start';",
+            "var p=c.querySelector('p');if(p){{p.style.whiteSpace='pre-wrap';",
+            "p.style.maxWidth='640px';p.style.textAlign='left';",
+            "p.style.fontFamily='ui-monospace,Menlo,monospace';",
+            "p.style.fontSize='12px';p.textContent={msg};}}}})();"
+        ),
+        msg = serde_json::to_string(err).unwrap_or_else(|_| "\"(unprintable error)\"".to_string())
+    )
 }
 
 /// Open a URL in the user's default browser via the OS opener.
