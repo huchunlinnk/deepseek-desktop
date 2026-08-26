@@ -47,7 +47,7 @@ pub fn start_and_wait() -> Result<String, String> {
                 "[deepseek-desktop] host `{program}` failed, falling back to `{fallback}`: {primary_err}"
             );
             if program != fallback {
-                if let Ok(()) = spawn_and_wait(fallback, &["web".to_string()]) {
+                if let Ok(()) = spawn_and_wait(fallback, &host_args()) {
                     return Ok(HOST_URL.to_string());
                 }
             }
@@ -74,9 +74,16 @@ fn resolve_host_command() -> (String, Vec<String>) {
         }
     }
     if let Some(launcher) = bundled_launcher() {
-        return (launcher, vec!["web".to_string()]);
+        return (launcher, host_args());
     }
-    ("dsh".to_string(), vec!["web".to_string()])
+    ("dsh".to_string(), host_args())
+}
+
+/// Arguments for `dsh web`: never let the host open the default browser —
+/// the webview is the UI. Newer hosts open a browser by default, which
+/// hijacked the user's browser on every app launch.
+fn host_args() -> Vec<String> {
+    vec!["web".to_string(), "--no-open".to_string()]
 }
 
 /// Best-effort locate the vendored launcher (written by `scripts/bundle-host.sh`),
@@ -139,6 +146,30 @@ fn spawn_host(program: &str, args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// Probe the host with a HEAD request: ready only when it completes with any
+/// HTTP status. Connect failures, resets, and empty replies all read as
+/// not-ready, so the webview waits until the server can actually answer.
+fn http_serves(addr: &str) -> bool {
+    use std::io::{Read, Write};
+
+    let Ok(mut stream) = TcpStream::connect(addr) else {
+        return false;
+    };
+    // One probe every 500 ms; a short timeout keeps the poll snappy.
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(2000)));
+    if stream
+        .write_all(b"HEAD / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+        .is_err()
+    {
+        return false;
+    }
+    let mut buf = [0u8; 128];
+    match stream.read(&mut buf) {
+        Ok(n) if n > 0 => buf.starts_with(b"HTTP/"),
+        _ => false,
+    }
+}
+
 /// Tail of the host's stderr, kept so `wait_until_ready` can quote the reason
 /// the host died instead of reporting only "did not become ready".
 static ERR_TAIL: OnceLock<Arc<Mutex<Vec<u8>>>> = OnceLock::new();
@@ -152,14 +183,17 @@ fn host_error_tail() -> String {
         .unwrap_or_default()
 }
 
-/// Poll a TCP connect until it succeeds, the child exits, or the deadline
-/// passes. A child that has already exited means the host crashed at boot —
-/// return its stderr immediately rather than spinning for the full timeout,
-/// which is what left the splash stuck on a "loading" spinner before.
+/// Poll the host until it serves HTTP, the child exits, or the deadline
+/// passes. A bare TCP connect is NOT enough: the listener binds before the
+/// HTTP stack is up, and a webview navigated in that window renders a blank
+/// page — the white-screen failure. Probe for a real HTTP response instead.
+/// A child that has already exited means the host crashed at boot — return
+/// its stderr immediately rather than spinning for the full timeout, which
+/// is what left the splash stuck on a "loading" spinner before.
 fn wait_until_ready(addr: &str, timeout: Duration) -> Result<(), String> {
     let deadline = Instant::now() + timeout;
     loop {
-        if TcpStream::connect(addr).is_ok() {
+        if http_serves(addr) {
             return Ok(());
         }
         // The host dying is the common failure (bad credentials, profile
