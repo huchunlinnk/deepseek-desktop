@@ -23,6 +23,12 @@ pub fn run() {
             desktop::setup(app.handle())?;
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app, event| {
+            // Reap the host child so it does not orphan and hold the port.
+            if let tauri::RunEvent::Exit = event {
+                desktop::host::kill_host();
+            }
+        });
 }

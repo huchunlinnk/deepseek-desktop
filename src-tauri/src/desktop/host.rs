@@ -5,12 +5,28 @@
 //! engine can pin a verified version.
 
 use std::net::TcpStream;
+use std::process::Child;
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 /// Address the `dsh web` host binds by default.
 pub const HOST_ADDR: &str = "127.0.0.1:3080";
 /// URL the webview navigates to once the host answers.
 pub const HOST_URL: &str = "http://127.0.0.1:3080";
+
+/// The spawned host child, kept so the shell can kill it on exit — otherwise it
+/// orphans and holds the port, blocking the next launch.
+static HOST_CHILD: OnceLock<Mutex<Option<Child>>> = OnceLock::new();
+
+/// Kill the host child process, if any. Called once on app exit.
+pub fn kill_host() {
+    if let Ok(mut guard) = HOST_CHILD.get_or_init(|| Mutex::new(None)).lock() {
+        if let Some(mut child) = guard.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
 
 /// Spawn the host and block until its HTTP endpoint accepts connections.
 pub fn start_and_wait() -> Result<String, String> {
@@ -57,12 +73,16 @@ fn bundled_launcher() -> Option<String> {
     None
 }
 
-/// Spawn the host process, detached from this shell's lifetime expectations.
+/// Spawn the host process and record its handle so `kill_host` can reap it.
 fn spawn_host(program: &str, args: &[String]) -> Result<(), String> {
-    std::process::Command::new(program)
+    let child = std::process::Command::new(program)
         .args(args)
         .spawn()
         .map_err(|err| format!("failed to spawn host `{program}`: {err}"))?;
+
+    if let Ok(mut guard) = HOST_CHILD.get_or_init(|| Mutex::new(None)).lock() {
+        *guard = Some(child);
+    }
 
     Ok(())
 }
