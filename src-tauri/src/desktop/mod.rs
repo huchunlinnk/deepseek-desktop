@@ -20,6 +20,11 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         eprintln!("[deepseek-desktop] global shortcut unavailable: {err}");
     }
 
+    // Clear the webview's on-disk caches if the vendored host changed version
+    // since the last launch. Must precede window creation: once WKWebView owns
+    // the directory the purge would be a no-op at best.
+    host::purge_webview_cache_on_upgrade();
+
     // Create the main window with external-link handling (internal URLs navigate
     // in-place; everything else opens in the system browser).
     create_main_window(app)?;

@@ -29,6 +29,107 @@ pub fn kill_host() {
     }
 }
 
+/// Bundle identifier, which names this app's WebKit and cache directories.
+const BUNDLE_ID: &str = "com.deepseek.dsh.desktop";
+
+/// Drop the WKWebView's on-disk state when the host version has changed since
+/// the last launch, then record the current version.
+///
+/// The harness serves a Service Worker. After the vendored dsh is upgraded the
+/// previous store's SW and module caches no longer match the new assets, and
+/// the page renders blank. Purging on version change gives every upgrade a
+/// clean slate automatically, while an unchanged version keeps its store
+/// (sessions, settings) across restarts.
+///
+/// Deliberately *not* done via `WebviewWindowBuilder::data_store_identifier`:
+/// pointing the webview at a non-default WKWebsiteDataStore stops Tauri's
+/// `tauri://` custom protocol from serving the bundled splash at all, which
+/// turns the window pure white — a worse failure than the stale cache it was
+/// meant to prevent. Purging the default store's directory achieves the same
+/// cache-busting with no effect on asset loading.
+///
+/// Must run before the webview is created, while WebKit has no handle on the
+/// directory. Every step is best-effort: a cache we cannot clear is worth a
+/// warning, never a failed boot.
+pub fn purge_webview_cache_on_upgrade() {
+    let Some(home) = std::env::var_os("HOME").map(std::path::PathBuf::from) else {
+        eprintln!("[deepseek-desktop] HOME unset; skipping webview cache check");
+        return;
+    };
+
+    let version = host_version();
+    let marker = home
+        .join("Library/Application Support")
+        .join(BUNDLE_ID)
+        .join("webview-host-version");
+
+    // An unreadable or absent marker counts as a mismatch: better to purge a
+    // cache that was already clean than to leave a poisoned one in place.
+    if std::fs::read_to_string(&marker).is_ok_and(|seen| seen.trim() == version) {
+        return;
+    }
+
+    for dir in [
+        home.join("Library/WebKit").join(BUNDLE_ID),
+        home.join("Library/Caches").join(BUNDLE_ID),
+    ] {
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) => eprintln!("[deepseek-desktop] cleared {}", dir.display()),
+            // Nothing to clear is the expected case on a fresh install.
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => eprintln!(
+                "[deepseek-desktop] could not clear {}: {err}",
+                dir.display()
+            ),
+        }
+    }
+
+    if let Some(parent) = marker.parent() {
+        if let Err(err) = std::fs::create_dir_all(parent) {
+            eprintln!("[deepseek-desktop] could not create {}: {err}", parent.display());
+            return;
+        }
+    }
+    // If the marker cannot be written the next launch purges again — wasteful
+    // but harmless, and still correct.
+    if let Err(err) = std::fs::write(&marker, &version) {
+        eprintln!("[deepseek-desktop] could not record host version: {err}");
+    }
+}
+
+/// The boot command's host version, e.g. `0.1.1-rc.2`, or `unknown`.
+/// Read from the vendored `@deepseek-ai/dsh/package.json` next to the
+/// launcher, falling back to the system dsh when the override selects it.
+fn host_version() -> String {
+    let (program, _) = resolve_host_command();
+    // Vendored launcher: version sits at a known relative path.
+    if let Some(dir) = std::path::Path::new(&program)
+        .parent()
+        .map(|d| d.join("node_modules/@deepseek-ai/dsh/package.json"))
+    {
+        if let Ok(text) = std::fs::read_to_string(&dir) {
+            if let Some(v) = extract_json_string_field(&text, "version") {
+                return v;
+            }
+        }
+    }
+    "unknown".to_string()
+}
+
+/// Pull one top-level `"key": "value"` string out of a JSON document, without
+/// a full JSON parse — package.json shape is trusted enough for a store salt.
+fn extract_json_string_field(text: &str, key: &str) -> Option<String> {
+    let needle = format!("\"{key}\"");
+    let start = text.find(&needle)? + needle.len();
+    let rest = &text[start..];
+    let colon = rest.find(':')?;
+    let rest = &rest[colon + 1..];
+    let quote = rest.find('"')?;
+    let rest = &rest[quote + 1..];
+    let end = rest.find('"')?;
+    Some(rest[..end].to_string())
+}
+
 /// Spawn the host and block until its HTTP endpoint accepts connections.
 /// If the preferred command fails at boot, fall back to the system `dsh`
 /// before giving up — a stale vendored host (version skew against
@@ -223,5 +324,20 @@ fn wait_until_ready(addr: &str, timeout: Duration) -> Result<(), String> {
             ));
         }
         std::thread::sleep(Duration::from_millis(500));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The vendored package.json version is extracted without a JSON parser.
+    #[test]
+    fn extracts_version_from_package_json_shape() {
+        let text = r#"{ "name": "@deepseek-ai/dsh", "version": "0.1.1-rc.2", "bin": {} }"#;
+        assert_eq!(
+            extract_json_string_field(text, "version").as_deref(),
+            Some("0.1.1-rc.2")
+        );
     }
 }
