@@ -4,6 +4,7 @@
   "description": "A thin native desktop shell for DeepSeek Harness — boots the official host, wraps it in a tray/notification/hotkey window, and is self-maintained by the deepseek-desk-rsi engine.",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@11.7.0",
   "scripts": {
     "tauri": "tauri"
   },
