@@ -43,10 +43,17 @@ jobs:
 
       - uses: pnpm/action-setup@v4
 
+      # The `rsi` profile must include the headless runner, or
+      # `dsh --profile rsi "…"` boots the plugin tree but never runs the task
+      # and never exits — it hangs until the runner cancels it. Add headless
+      # first so the bundle order stays base → headless → rsi.
       - name: Install the RSI engine into a headless profile
-        run: npx @deepseek-ai/dsh plugin --profile rsi add github:huchunlinnk/deepseek-desk-rsi#main
+        run: |
+          npx @deepseek-ai/dsh plugin --profile rsi add @deepseek-ai/dsh-headless
+          npx @deepseek-ai/dsh plugin --profile rsi add github:huchunlinnk/deepseek-desk-rsi#main
 
       - name: Run the daily RSI sync
+        timeout-minutes: 90
         run: |
           npx @deepseek-ai/dsh --profile rsi "Run the daily upstream sync against the 'upstream' remote: call rsi_perceive, integrate the relevant harness changes into the desktop glue, call rsi_checkpoint before editing, call rsi_verify, and if it fails roll back with rsi_rollback and retry a bounded number of times; when verify passes, call rsi_parity against parity.json and, if any plugin is missing, regenerate parity.json or restore the capability and re-verify; when both verify and parity pass, call rsi_propose with the rsi_verify and rsi_parity outputs pasted into the body."
         env:
