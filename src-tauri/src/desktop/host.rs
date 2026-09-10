@@ -138,7 +138,7 @@ pub fn start_and_wait() -> Result<String, String> {
     let (program, args) = resolve_host_command();
 
     match spawn_and_wait(&program, &args) {
-        Ok(()) => return Ok(HOST_URL.to_string()),
+        Ok(()) => return Ok(wait_for_authenticated_url(Duration::from_secs(5))),
         Err(primary_err) => {
             // Self-repair fallback: the system dsh tracks the newest state
             // (it is what upgraded the credentials file in the first place),
@@ -149,7 +149,7 @@ pub fn start_and_wait() -> Result<String, String> {
             );
             if program != fallback {
                 if let Ok(()) = spawn_and_wait(fallback, &host_args()) {
-                    return Ok(HOST_URL.to_string());
+                    return Ok(wait_for_authenticated_url(Duration::from_secs(5)));
                 }
             }
             Err(primary_err)
@@ -206,38 +206,22 @@ fn bundled_launcher() -> Option<String> {
 }
 
 /// Spawn the host process and record its handle so `kill_host` can reap it.
-/// Stderr is piped and drained on a reader thread: a host that dies at boot
-/// (bad credentials, corrupted profile, version skew) must surface its error
-/// instead of being muted while the readiness poll runs out its two minutes.
+/// Both streams are piped and drained on reader threads: stderr surfaces a
+/// host that dies at boot, and stdout carries the authenticated URL the
+/// webview must navigate to on newer hosts.
 fn spawn_host(program: &str, args: &[String]) -> Result<(), String> {
     let mut child = Command::new(program)
         .args(args)
         .stderr(Stdio::piped())
-        .stdout(Stdio::null())
+        .stdout(Stdio::piped())
         .spawn()
         .map_err(|err| format!("failed to spawn host `{program}`: {err}"))?;
 
     if let Some(stderr) = child.stderr.take() {
-        // Shared ring of the last stderr bytes, read until the child exits.
-        let tail: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
-        ERR_TAIL.get_or_init(|| tail.clone());
-        std::thread::spawn(move || {
-            let mut reader = stderr;
-            let mut buf = [0u8; 4096];
-            loop {
-                match reader.read(&mut buf) {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => {
-                        let mut tail = tail.lock().unwrap();
-                        tail.extend_from_slice(&buf[..n]);
-                        let len = tail.len();
-                        if len > 8192 {
-                            tail.drain(..len - 8192);
-                        }
-                    }
-                }
-            }
-        });
+        drain_ring(stderr, &ERR_TAIL);
+    }
+    if let Some(stdout) = child.stdout.take() {
+        drain_ring(stdout, &STDOUT_TAIL);
     }
 
     if let Ok(mut guard) = HOST_CHILD.get_or_init(|| Mutex::new(None)).lock() {
@@ -282,6 +266,82 @@ fn host_error_tail() -> String {
         .and_then(|tail| tail.lock().ok())
         .map(|tail| String::from_utf8_lossy(&tail).into_owned())
         .unwrap_or_default()
+}
+
+/// Tail of the host's stdout, kept so the boot thread can recover the
+/// authenticated URL (`dsh web: http://…?token=…`) that newer hosts print.
+static STDOUT_TAIL: OnceLock<Arc<Mutex<Vec<u8>>>> = OnceLock::new();
+
+/// Drain a child stream into a shared last-bytes ring until EOF, so the shell
+/// can inspect a host's stderr (boot failures) and stdout (the printed URL).
+fn drain_ring<R: Read + Send + 'static>(
+    reader: R,
+    ring: &'static OnceLock<Arc<Mutex<Vec<u8>>>>,
+) {
+    let tail: Arc<Mutex<Vec<u8>>> = ring.get_or_init(|| Arc::new(Mutex::new(Vec::new()))).clone();
+    std::thread::spawn(move || {
+        let mut reader = reader;
+        let mut buf = [0u8; 4096];
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    let mut tail = tail.lock().unwrap();
+                    tail.extend_from_slice(&buf[..n]);
+                    let len = tail.len();
+                    if len > 8192 {
+                        tail.drain(..len - 8192);
+                    }
+                }
+            }
+        }
+    });
+}
+
+/// Pull the authenticated web URL out of captured host output. Newer hosts
+/// print `dsh web: http://127.0.0.1:3080/?token=…` to stdout; the bare
+/// `HOST_URL` is rejected with 401 by those hosts, so the webview must follow
+/// the exact printed link (token and all). Returns the last such URL, since a
+/// fallback re-spawn prints a fresh token after any earlier attempt.
+fn parse_web_url(text: &str) -> Option<String> {
+    for line in text.lines().rev() {
+        let line = line.trim();
+        let Some(rest) = line.strip_prefix("dsh web: ") else {
+            continue;
+        };
+        let url = rest.split_whitespace().next().unwrap_or_default();
+        if url.starts_with("http://") || url.starts_with("https://") {
+            return Some(url.to_string());
+        }
+    }
+    None
+}
+
+/// The last authenticated URL seen on the host's stdout, if any.
+fn authenticated_host_url() -> Option<String> {
+    let stdout = STDOUT_TAIL
+        .get()
+        .and_then(|tail| tail.lock().ok())
+        .map(|tail| String::from_utf8_lossy(&tail).into_owned())
+        .unwrap_or_default();
+    parse_web_url(&stdout)
+}
+
+/// After readiness, wait briefly for the host to print its authenticated URL.
+/// The URL is announced asynchronously (it can land a beat after the listener
+/// accepts connections), so poll instead of assuming it is already present.
+/// Falls back to the bare `HOST_URL` for older hosts that print no token.
+fn wait_for_authenticated_url(timeout: Duration) -> String {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if let Some(url) = authenticated_host_url() {
+            return url;
+        }
+        if Instant::now() >= deadline {
+            return HOST_URL.to_string();
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
 }
 
 /// Poll the host until it serves HTTP, the child exits, or the deadline
@@ -339,5 +399,31 @@ mod tests {
             extract_json_string_field(text, "version").as_deref(),
             Some("0.1.1-rc.2")
         );
+    }
+
+    /// The authenticated URL is recovered from the host's stdout line.
+    #[test]
+    fn parses_authenticated_web_url_from_host_stdout() {
+        let text = "noise\ndsh web: http://127.0.0.1:3080/?token=abc123 \nmore";
+        assert_eq!(
+            parse_web_url(text).as_deref(),
+            Some("http://127.0.0.1:3080/?token=abc123")
+        );
+    }
+
+    /// A fallback re-spawn prints a fresh token; the latest line wins.
+    #[test]
+    fn prefers_last_web_url_when_host_respawns() {
+        let text = "dsh web: http://127.0.0.1:3080/?token=stale\ndsh web: http://127.0.0.1:3080/?token=fresh";
+        assert_eq!(
+            parse_web_url(text).as_deref(),
+            Some("http://127.0.0.1:3080/?token=fresh")
+        );
+    }
+
+    /// Non-URL output yields no URL (older hosts print no token line).
+    #[test]
+    fn no_web_url_without_host_line() {
+        assert_eq!(parse_web_url("some other output"), None);
     }
 }
